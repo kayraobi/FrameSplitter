@@ -1,0 +1,29 @@
+# Ignore video files
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.wmv
+*.flv
+
+# Ignore directories with videos
+BeforeSplit/
+AfterSplit/
+
+# Ignore processed videos tracking file
+.processed_videos
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/ 
