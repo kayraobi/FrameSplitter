@@ -6,9 +6,11 @@
 *.wmv
 *.flv
 
-# Ignore directories with videos
-BeforeSplit/
-AfterSplit/
+# Ignore contents of video directories but keep the directories
+BeforeSplit/*
+!BeforeSplit/.gitkeep
+AfterSplit/*
+!AfterSplit/.gitkeep
 
 # Ignore processed videos tracking file
 .processed_videos
