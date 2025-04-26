@@ -3,6 +3,7 @@ import os
 import argparse
 import time
 import hashlib
+import cv2
 from moviepy.editor import VideoFileClip
 
 def get_video_hash(video_path):
@@ -32,65 +33,78 @@ def mark_as_processed(video_path, processed_videos_file):
     with open(processed_videos_file, 'a+') as f:
         f.write(f"{video_hash}\n")
 
-def split_video(video_path, output_dir, segment_duration=5):
-    """
-    Split a video into segments of specified duration
-    
-    Args:
-        video_path (str): Path to the video file
-        output_dir (str): Directory to save the output segments
-        segment_duration (int): Duration of each segment in seconds (default: 5)
-    """
-    # Create output directory if it doesn't exist
+def extract_one_frame_per_second(video_path, output_dir, segment_name):
+    """Extract one frame per second from a video segment"""
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    
-    # Get video filename without extension
+
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    duration = frame_count / fps
+
+    count = 0
+    while count <= duration:
+        frame_no = int(count * fps)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_no)
+        success, frame = cap.read()
+
+        if not success:
+            break
+
+        frame_filename = f"{segment_name}_frame_{int(count):03d}.png"
+        output_path = os.path.join(output_dir, frame_filename)
+        cv2.imwrite(output_path, frame)
+        print(f"Saved frame: {output_path}")
+
+        count += 1
+
+    cap.release()
+
+def split_video(video_path, output_dir, frame_output_dir, segment_duration=5):
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
     filename = os.path.basename(video_path)
     name, _ = os.path.splitext(filename)
     
     try:
-        # Load the video
         clip = VideoFileClip(video_path)
-        
-        # Calculate number of segments
         duration = int(clip.duration)
         segments = duration // segment_duration
-        
-        # Split the video into segments
+
         for i in range(segments + 1):
             start_time = i * segment_duration
             end_time = min((i + 1) * segment_duration, duration)
             
-            # Skip if segment would be 0 seconds
             if end_time <= start_time:
                 continue
                 
-            # Create subclip
             segment = clip.subclip(start_time, end_time)
+
+            segment_filename = f"{name}_segment_{i+1:03d}.mp4"
+            segment_path = os.path.join(output_dir, segment_filename)
+
+            segment.write_videofile(segment_path, 
+                                    codec="libx264", 
+                                    audio_codec="aac",
+                                    temp_audiofile=f"temp-audio-{i}.m4a", 
+                                    remove_temp=True)
             
-            # Output file path
-            output_path = os.path.join(output_dir, f"{name}_segment_{i+1:03d}.mp4")
-            
-            # Write segment to file
-            segment.write_videofile(output_path, 
-                                codec="libx264", 
-                                audio_codec="aac",
-                                temp_audiofile=f"temp-audio-{i}.m4a", 
-                                remove_temp=True)
-            
-            print(f"Created segment {i+1}/{segments+1}: {output_path}")
+            print(f"Created segment {i+1}/{segments+1}: {segment_path}")
+
+            # Burada her segmentten frame çıkar
+            extract_one_frame_per_second(segment_path, frame_output_dir, f"{name}_segment_{i+1:03d}")
         
-        # Close the clip
         clip.close()
-        
+
         print(f"Video split complete. {segments+1} segments created in '{output_dir}'")
         return True
     except Exception as e:
         print(f"Error processing {video_path}: {str(e)}")
         return False
 
-def process_videos(input_dir, output_dir, segment_duration, processed_videos_file):
+def process_videos(input_dir, output_dir, frame_output_dir, segment_duration, processed_videos_file):
     """
     Process all videos in input directory that haven't been processed yet
     """
@@ -98,6 +112,8 @@ def process_videos(input_dir, output_dir, segment_duration, processed_videos_fil
         os.makedirs(input_dir)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
+    if not os.path.exists(frame_output_dir):
+        os.makedirs(frame_output_dir)
         
     video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv']
     
@@ -117,17 +133,19 @@ def process_videos(input_dir, output_dir, segment_duration, processed_videos_fil
             continue
             
         print(f"Processing {video_path}...")
-        success = split_video(video_path, output_dir, segment_duration)
+        success = split_video(video_path, output_dir, frame_output_dir, segment_duration)
         
         if success:
             mark_as_processed(video_path, processed_videos_file)
 
 def main():
-    parser = argparse.ArgumentParser(description="Split videos into segments of specified duration")
+    parser = argparse.ArgumentParser(description="Split videos into segments and extract one frame per second")
     parser.add_argument("-i", "--input-dir", default="BeforeSplit", 
                         help="Directory containing videos to split (default: BeforeSplit)")
     parser.add_argument("-o", "--output-dir", default="AfterSplit", 
                         help="Directory to save output segments (default: AfterSplit)")
+    parser.add_argument("-f", "--frame-dir", default="ExtractedFrames",
+                        help="Directory to save extracted frames (default: ExtractedFrames)")
     parser.add_argument("-d", "--duration", type=int, default=5, choices=range(5, 11),
                         help="Duration of each segment in seconds (5-10)")
     parser.add_argument("-w", "--watch", action="store_true",
@@ -143,13 +161,13 @@ def main():
         print(f"Watching {args.input_dir} for new videos...")
         try:
             while True:
-                process_videos(args.input_dir, args.output_dir, args.duration, processed_videos_file)
+                process_videos(args.input_dir, args.output_dir, args.frame_dir, args.duration, processed_videos_file)
                 print(f"Waiting {args.interval} seconds before next check...")
                 time.sleep(args.interval)
         except KeyboardInterrupt:
             print("Watch mode stopped.")
     else:
-        process_videos(args.input_dir, args.output_dir, args.duration, processed_videos_file)
+        process_videos(args.input_dir, args.output_dir, args.frame_dir, args.duration, processed_videos_file)
 
 if __name__ == "__main__":
-    main() 
+    main()
