@@ -93,7 +93,7 @@ def split_video(video_path, output_dir, frame_output_dir, segment_duration=5):
             
             print(f"Created segment {i+1}/{segments+1}: {segment_path}")
 
-            # Burada her segmentten frame çıkar
+        
             extract_one_frame_per_second(segment_path, frame_output_dir, f"{name}_segment_{i+1:03d}")
         
         clip.close()
